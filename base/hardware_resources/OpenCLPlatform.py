@@ -29,20 +29,25 @@ class OpenCLPlatform:
             filters.append(
                 lambda device: device.type != OpenCL.device_type.ACCELERATOR)
         if exclude_others:
-            filters.append(lambda device: device.type not in [
+            filters.append(lambda device: not device.type not in [
                 OpenCL.device_type.CPU, OpenCL.device_type.GPU, OpenCL.
                 device_type.ACCELERATOR
             ])
         if self.devices is None:
-            self.devices = [
-                OpenCLDevice(device=device,
-                             device_context=OpenCL.Context([device]),
-                             device_name=device.name,
-                             device_type=device.type,
-                             hardware_extensions=device.extensions)
-                for device in self.platform.get_devices()
-                if all([filter(device) for filter in filters])
-            ]
+            self.devices = []
+            alldevices = self.platform.get_devices()
+            for device in alldevices:
+                temp = all([filter(device) for filter in filters])
+                if temp:
+                    context = OpenCL.Context([device])
+                    queue = OpenCL.CommandQueue(context)
+                    self.devices.append(
+                        OpenCLDevice(device=device,
+                                     device_context=context,
+                                     device_name=device.name,
+                                     device_type=device.type,
+                                     hardware_extensions=device.extensions,
+                                     queue=queue))
         return self.devices
 
     def create_context(self):

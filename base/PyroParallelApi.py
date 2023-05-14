@@ -82,3 +82,6 @@ class PyroParallel:
 
     def process(self):
         pass
+
+    def benchmark_api(self):
+        pass
