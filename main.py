@@ -1,7 +1,22 @@
-from base.PyroParallelApi import PyroParallel
-from base.hardware_resources.OpenCLVersion import *
+import PyroParallel as PyroParallel
 
-# Framework = PyroParallel(verbose=True, exclude_FPGA=True, exclude_others=True)
+Framework = PyroParallel.PyroParallel(verbose=True,
+                                      exclude_FPGA=True,
+                                      exclude_others=True,
+                                      emulation=False)
+# Framework2 = PyroParallel.PyroParallel(verbose=True,
+#                                        emulation=True,
+#                                        empty_platform=True)
+#                                        exclude_FPGA=False,
+#                                        exclude_others=False,
+#                                        emulation=True)
+
+# Framework.opencl_devices[0] = Framework.opencl_devices[1]
+# Framework.opencl_devices[2] = Framework.opencl_devices[1]
+# z = Framework.get_all_devices_contexts()
+# y = Framework.get_all_platform_contexts()
+Framework.benchmark_api()
+x = 12
 # total_time = 0.1
 # # for i in range(10):
 # #     x = 2
