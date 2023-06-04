@@ -192,6 +192,49 @@ class PyroParallel:
     def process(self):
         pass
 
+    def grayscale(self, images):
+        result = []
+        performance_indexes = {}
+
+        for device in self.opencl_devices:
+            performance_indexes[device] = device.profiling["_{0}".format(
+                self.grayscale.__name__)]
+
+        local_performances = performance_indexes.copy()
+
+        fastest_device = max(local_performances, key=local_performances.get)
+        for image in images:
+            current_device = max(local_performances,
+                                 key=local_performances.get)
+            if current_device is not fastest_device and local_performances[
+                    current_device] > local_performances[fastest_device]:
+
+                result.append(current_device._grayscale(image))
+
+                local_performances[current_device] = performance_indexes[
+                    current_device]
+                for device in local_performances:
+                    if device is not current_device:
+                        local_performances[device] = round(
+                            local_performances[device] +
+                            performance_indexes[device], 3)
+            else:
+
+                result.append(fastest_device._grayscale(image))
+
+                local_performances[fastest_device] = performance_indexes[
+                    fastest_device]
+                for device in local_performances:
+                    if device != fastest_device:
+                        local_performances[device] = round(
+                            local_performances[device] +
+                            performance_indexes[device], 3)
+
+        # for output in result:
+        #     OpenCLFunctions.Pictures.save_array_as_image(
+        #         output, "./output_test/")
+        return result
+
     def benchmark_api(self):
         '''benchmark_api Creates the performance indexes so that the API when processes something it will know the performance of devices before the processing starts. 
         If this is not executed, equal performance indexes are asssigned to all devices and while processing, the API will learn and adjust the indexes based on the measured performance.
