@@ -1,6 +1,7 @@
 # External import
 import math as opencl_math
 import PIL.Image as opencl_image
+import pyopencl as opencl_function
 # External import
 
 # Proprietary import
@@ -60,6 +61,19 @@ class OpenCLFunctions:
             opencl_image.fromarray(array).save(
                 path + str(OpenCLFunctions.Pictures.counter) + ".bmp")
             OpenCLFunctions.Pictures.counter += 1
+
+        @staticmethod
+        def get_work_amount(task_list):
+            result = 0
+            COMPLETED = opencl_function.command_execution_status.COMPLETE
+            processing_status = None
+            copy_status = None
+            for task in task_list:
+                processing_status = task.opencl_input_processing_event.command_execution_status
+                copy_status = task.opencl_fetch_result_event.command_execution_status
+                if (processing_status + copy_status) > COMPLETED:
+                    result += 1
+            return result
 
     class Time:
         ''' Subclass for time-related calculations.

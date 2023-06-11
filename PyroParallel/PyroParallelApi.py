@@ -60,7 +60,7 @@ class PyroParallel:
                  exclude_GPU=False,
                  exclude_FPGA=False,
                  exclude_others=False,
-                 CHUNKCHUNK_PROCESSING_SIZE=32):
+                 CHUNKCHUNK_PROCESSING_SIZE=1):
         '''__init__ \n
             The API object is created by initializing all platforms and devices based on filters. Arguments are optional and by default, all non-virtual devices are generated. 
             NOTE: Profiling is not included in the initialization and must be done afterward. 
@@ -73,7 +73,7 @@ class PyroParallel:
             exclude_GPU (bool, optional): Defaults to False. If True, no GPUs contexts will be generated.\n
             exclude_FPGA (bool, optional): Defaults to False. If True, no FPGAs contexts will be generated.\n
             exclude_others (bool, optional): Defaults to False. If True, no other contexts for devices that don't fit any other criteria will be generated.\n
-            exclude_others (int, optional): Defaults to 32. Sets how many bytes shall be processed in one work item.
+            exclude_others (int, optional): Defaults to 1. Sets how many bytes shall be processed in one work item. Increase this value if the maximum work item of a device is to low compared to the problem size
         '''
         global VERBOSE
         VERBOSE = verbose
@@ -194,41 +194,29 @@ class PyroParallel:
 
     def grayscale(self, images):
         result = []
-        performance_indexes = {}
+        device_queues = {}
+        device_queues_status = {}
 
+        selected_device = None
         for device in self.opencl_devices:
-            performance_indexes[device] = device.profiling["_{0}".format(
-                self.grayscale.__name__)]
-
-        local_performances = performance_indexes.copy()
-
-        fastest_device = max(local_performances, key=local_performances.get)
+            device_queues[device] = []
+            device_queues_status[device] = 0
+        device_queues = dict(
+            sorted(device_queues.items(),
+                   key=lambda x: -x[0].profiling["_grayscale"]))
         for image in images:
-            current_device = max(local_performances,
-                                 key=local_performances.get)
-            if current_device is not fastest_device and local_performances[
-                    current_device] > local_performances[fastest_device]:
-
-                result.append(current_device._grayscale(image))
-
-                local_performances[current_device] = performance_indexes[
-                    current_device]
-                for device in local_performances:
-                    if device is not current_device:
-                        local_performances[device] = round(
-                            local_performances[device] +
-                            performance_indexes[device], 3)
-            else:
-
-                result.append(fastest_device._grayscale(image))
-
-                local_performances[fastest_device] = performance_indexes[
-                    fastest_device]
-                for device in local_performances:
-                    if device != fastest_device:
-                        local_performances[device] = round(
-                            local_performances[device] +
-                            performance_indexes[device], 3)
+            for device in device_queues:
+                device_queues_status[
+                    device] = OpenCLFunctions.Pictures.get_work_amount(
+                        device_queues[device])
+            selected_device = min(device_queues_status,
+                                  key=device_queues_status.get)
+            device_queues[selected_device].append(
+                selected_device._grayscale(image))
+        for device, events in device_queues.items():
+            for event in events:
+                event.opencl_fetch_result_event.wait()
+                result.append(event.result_numpy)
 
         # for output in result:
         #     OpenCLFunctions.Pictures.save_array_as_image(

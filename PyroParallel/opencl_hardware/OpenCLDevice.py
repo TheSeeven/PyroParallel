@@ -21,7 +21,7 @@ class OpenCLDevice:
 
         Args:
             device (pyopencl.Device): Creates a wraper around pyopencl.Device.
-            CHUNK_PROCESSING_SIZE (int): Controls how much a work-item will do. Larger values yield to lower global_size and local_size. Choose wisely.
+            CHUNK_PROCESSING_SIZE (int): Controls how much a work-item will do. Larger values yield to lower global_size and local_size. If a device does not support to many work items, increase this value.
         '''
         self.device = device
         self.context = opencl_device.Context([device])
@@ -30,28 +30,36 @@ class OpenCLDevice:
         self.hardware_extensions = self.device.extensions
         self.queue = opencl_device.CommandQueue(
             self.context,
-            properties=opencl_device.command_queue_properties.PROFILING_ENABLE)
+            properties=opencl_device.command_queue_properties.PROFILING_ENABLE,
+        )
         self.CHUNK_PROCESSING_SIZE = CHUNK_PROCESSING_SIZE
-        self.profiling = {}
         self.max_work_group_size_device = self.device.max_work_group_size
+        self.profiling = {}
         self.kernels = {}
 
-    def _grayscale(self, image):
-        result = opencl_device_numpy.empty_like(image)
+    def _grayscale(self, input_image):
+        ENQUEUE_PROCESS_ASYNC = opencl_device.enqueue_nd_range_kernel
+        ENQUEUE_COPY_ASYNC = opencl_device.enqueue_copy
+        OPENCL_BUFFER = opencl_device.Buffer
+
+        result = OpenCLBuffer(
+            OPENCL_BUFFER(self.context,
+                          opencl_device.mem_flags.READ_WRITE
+                          | opencl_device.mem_flags.ALLOC_HOST_PTR,
+                          size=input_image.size),
+            OPENCL_BUFFER(self.context,
+                          opencl_device.mem_flags.READ_WRITE
+                          | opencl_device.mem_flags.ALLOC_HOST_PTR,
+                          size=input_image.size),
+            opencl_device_numpy.empty_like(input_image))
+        result.opencl_fetch_input_event = ENQUEUE_COPY_ASYNC(
+            self.queue, result.opencl_buffer_input, input_image)
+
         program = self.kernels["_grayscale"].grayscale
-        buffers = OpenCLBuffer(
-            opencl_device.Buffer(self.context,
-                                 opencl_device.mem_flags.READ_ONLY
-                                 | opencl_device.mem_flags.USE_HOST_PTR,
-                                 hostbuf=image),
-            opencl_device.Buffer(self.context,
-                                 opencl_device.mem_flags.READ_WRITE
-                                 | opencl_device.mem_flags.ALLOC_HOST_PTR,
-                                 size=image.size))
         program.set_args(
-            buffers.opencl_buffer_input, buffers.opencl_buffer_output,
-            opencl_device_numpy.uint32(image.shape[0]),
-            opencl_device_numpy.uint64(buffers.size),
+            result.opencl_buffer_input, result.opencl_buffer_output,
+            opencl_device_numpy.uint32(input_image.shape[0]),
+            opencl_device_numpy.uint64(result.size),
             opencl_device_numpy.uint64(self.CHUNK_PROCESSING_SIZE))
         max_work_group_size_kernel = program.get_work_group_info(
             opencl_device.kernel_work_group_info.WORK_GROUP_SIZE, self.device)
@@ -59,33 +67,42 @@ class OpenCLDevice:
             opencl_device.kernel_work_group_info.
             PREFERRED_WORK_GROUP_SIZE_MULTIPLE, self.device)
         global_size = OpenCLFunctions.Pictures._get_global_size_picture(
-            image.shape[0], image.shape[1], self.CHUNK_PROCESSING_SIZE)
+            input_image.shape[0], input_image.shape[1],
+            self.CHUNK_PROCESSING_SIZE)
         local_size, global_size = OpenCLFunctions.OpenCLScheduler._get_optimal_local_global_size(
             global_size, max_work_group_size_kernel,
             self.device.max_work_group_size, self.device.max_work_item_sizes,
             prefered_local_size)
-        opencl_device.enqueue_nd_range_kernel(self.queue, program, global_size,
-                                              local_size)
 
-        opencl_device.enqueue_copy(self.queue, result,
-                                   buffers.opencl_buffer_output)
+        result.opencl_input_processing_event = ENQUEUE_PROCESS_ASYNC(
+            self.queue,
+            program,
+            global_size,
+            local_size,
+            wait_for=[result.opencl_fetch_input_event])
+        result.opencl_fetch_result_event = ENQUEUE_COPY_ASYNC(
+            self.queue,
+            result.result_numpy,
+            result.opencl_buffer_output,
+            is_blocking=None)
+
         return result
 
     def _benchmark_grayscale(self):
-        # benchmark_img = opencl_device_numpy.random.randint(
-        #     0, 256, size=(1000, 10000, 3), dtype=opencl_device_numpy.uint8)
-        benchmark_img = opencl_device_numpy.zeros(
-            (10000, 1000, 3), dtype=opencl_device_numpy.uint8)
-        benchmark_img[:, :, 0] = 255
+        ENQUEUE_PROCESSING = opencl_device.enqueue_nd_range_kernel
+        ENQUEUE_COPY = opencl_device.enqueue_copy
+        benchmark_img = opencl_device_numpy.full(
+            (2500, 2500, 3), 255, dtype=opencl_device_numpy.uint8)
         opencl_buffers = OpenCLBuffer(
             opencl_device.Buffer(self.context,
                                  opencl_device.mem_flags.READ_ONLY
-                                 | opencl_device.mem_flags.USE_HOST_PTR,
-                                 hostbuf=benchmark_img),
+                                 | opencl_device.mem_flags.ALLOC_HOST_PTR,
+                                 size=benchmark_img.size),
             opencl_device.Buffer(self.context,
                                  opencl_device.mem_flags.READ_WRITE
                                  | opencl_device.mem_flags.ALLOC_HOST_PTR,
-                                 size=benchmark_img.size))
+                                 size=benchmark_img.size),
+            opencl_device_numpy.empty_like(benchmark_img))
         self.kernels["_grayscale"] = opencl_device.Program(
             self.context, Kernels._GRAYSCALE()).build()
         kernel_program_call = self.kernels["_grayscale"].grayscale
@@ -110,20 +127,27 @@ class OpenCLDevice:
             self.device.max_work_group_size, self.device.max_work_item_sizes,
             prefered_local_size)
 
-        output_test = opencl_device_numpy.empty_like(benchmark_img)
         timetable = []
         for _ in range(10):
-            event_processing = opencl_device.enqueue_nd_range_kernel(
-                self.queue, kernel_program_call, global_size, local_size)
-            event_transfer = opencl_device.enqueue_copy(
-                self.queue, output_test, opencl_buffers.opencl_buffer_output)
+            opencl_buffers.opencl_fetch_input_event = ENQUEUE_COPY(
+                self.queue, opencl_buffers.opencl_buffer_input, benchmark_img)
+            opencl_buffers.opencl_input_processing_event = ENQUEUE_PROCESSING(
+                self.queue,
+                kernel_program_call,
+                global_size,
+                local_size,
+                wait_for=[opencl_buffers.opencl_fetch_input_event])
+            opencl_buffers.opencl_fetch_result_event = ENQUEUE_COPY(
+                self.queue,
+                opencl_buffers.result_numpy,
+                opencl_buffers.opencl_buffer_output,
+                wait_for=[opencl_buffers.opencl_input_processing_event])
+            opencl_buffers.opencl_fetch_input_event.wait()
+            opencl_buffers.opencl_input_processing_event.wait()
+            opencl_buffers.opencl_fetch_result_event.wait()
 
-            event_processing.wait()
-            event_transfer.wait()
-            time = event_transfer.profile.end - event_transfer.profile.start
+            time = opencl_buffers.opencl_fetch_result_event.profile.end - opencl_buffers.opencl_fetch_input_event.profile.start
             timetable.append(time)
-        # OpenCLFunctions.Pictures.save_array_as_image(output_test,
-        #                                              "./output_test/")
         self.profiling['_grayscale'] = opencl_device_numpy.average(timetable)
 
     def _benchmark_double_precision(self):
