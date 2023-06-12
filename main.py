@@ -9,7 +9,7 @@ Framework_all = Pyro.PyroParallel(verbose=True,
                                   exclude_FPGA=True,
                                   exclude_others=True,
                                   emulation=False)
-
+3.
 Framework_only_CPU = Pyro.PyroParallel(verbose=True,
                                        exclude_FPGA=True,
                                        exclude_others=True,
@@ -27,6 +27,7 @@ Framework_only_iGPU = Pyro.PyroParallel(verbose=True,
                                         exclude_others=True,
                                         emulation=False,
                                         exclude_CPU=True)
+
 Framework_only_iGPU.opencl_devices[0] = Framework_only_iGPU.opencl_devices[1]
 Framework_only_iGPU.opencl_devices = Framework_only_iGPU.opencl_devices[:-1]
 
@@ -40,7 +41,7 @@ TEST_DATA = [
     np.full((3000, 3000, 3), 255, dtype=np.uint8)
     for _ in range(NUMBER_OF_TESTS)
 ]
-for _ in range(1, 11):
+for _ in range(11, 11):
     print("RUN: " + str(_))
     time.sleep(2)
     start = time.time()
@@ -64,4 +65,30 @@ for _ in range(1, 11):
     print("iGPU: {0}".format(str((end - start) * 1000)), )
     time.sleep(2)
     print("END RUN:{0}\n\n".format(str(_)))
+
+for _ in range(0, 1):
+    print("RUN: " + str(_))
+    time.sleep(2)
+    start = time.time()
+    Framework_only_CPU.operation_fp32(TEST_DATA, TEST_DATA, 5)
+    end = time.time()
+    print("CPU: {0}".format(str((end - start) * 1000)), )
+    time.sleep(2)
+    start = time.time()
+    Framework_only_GPUS.operation_fp32(TEST_DATA, TEST_DATA, 5)
+    end = time.time()
+    print("GPUS: {0}".format(str((end - start) * 1000)), )
+    time.sleep(2)
+    start = time.time()
+    Framework_all.operation_fp32(TEST_DATA, TEST_DATA, 5)
+    end = time.time()
+    print("All devices: {0}".format(str((end - start) * 1000)), )
+    time.sleep(2)
+    start = time.time()
+    Framework_only_iGPU.operation_fp32(TEST_DATA, TEST_DATA, 5)
+    end = time.time()
+    print("iGPU: {0}".format(str((end - start) * 1000)), )
+    time.sleep(2)
+    print("END RUN:{0}\n\n".format(str(_)))
+
 print("done..")
