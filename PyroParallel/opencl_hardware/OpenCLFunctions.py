@@ -2,6 +2,7 @@
 import math as opencl_math
 import PIL.Image as opencl_image
 import pyopencl as opencl_function
+import numpy as numpy_function
 # External import
 
 # Proprietary import
@@ -22,32 +23,48 @@ class OpenCLFunctions:
 
     '''
 
+    DIVISION = 0
+    MULTIPLY = 1
+    ADDITION = 2
+    SUBTRACT = 3
+    FP32 = 32
+    FP64 = 64
+
+    class Operation:
+        '''Subclass for performing operations on arrays.
+        
+        Attributes:
+            counter (int): Counter for generating unique txt file names.
+        '''
+
+        counter = 0
+
+        def save_array_as_text(array, path, precision):
+            '''Save an array as a text file.
+
+            Args:
+                array (numpy.ndarray): Array to be saved.
+                path (str): Path to save the text file.
+            '''
+            global counter
+            fmt = None
+            if precision == OpenCLFunctions.FP32:
+                fmt = '%.8f'
+            elif precision == OpenCLFunctions.FP64:
+                fmt = '%.16f'
+            numpy_function.savetxt(
+                path + str(OpenCLFunctions.Operation.counter) + ".txt",
+                array,
+                fmt=fmt)
+            OpenCLFunctions.Operation.counter += 1
+
     class Pictures:
         ''' Subclass for working with pictures and saving them as images.
-        
-        This class provides functions for saving arrays as images.
-        
+                
         Attributes:
             counter (int): Counter for generating unique image names.
         '''
-        counter = 1
-
-        @staticmethod
-        def _get_global_size_picture(width, height, chunk_size):
-            '''_get_global_size_picture Calculate the global size for an image processing operation.
-
-            This function calculates the global size for an image processing operation based on the width, height,
-            and chunk size.
-
-            Args:
-                width (int): Width of the image.
-                height (int): Height of the image.
-                chunk_size (int): Size of the chunks for processing.
-
-            Returns:
-                tuple: Global size for the image processing operation.
-            '''
-            return (opencl_math.ceil(width / chunk_size), height)
+        counter = 0
 
         @staticmethod
         def save_array_as_image(array, path):
@@ -90,15 +107,16 @@ class OpenCLFunctions:
             The performance score is calculated as the ratio of the minimum execution time to each execution time.
 
             Args:
-                execution_times (list): List of execution times.
+                execution_times (dict): List of execution times.
 
             Returns:
-                list: Performance scores.
+                dict: Performance scores.
             '''
-            min_time = min(execution_times)
-            performance_scores = [
-                round(min_time / time, 3) for time in execution_times
-            ]
+            min_time = min(execution_times.values())
+            performance_scores = {
+                device: round(min_time / time, 3)
+                for device, time in execution_times.items()
+            }
             return performance_scores
 
     class OpenCLScheduler:
@@ -185,3 +203,20 @@ class OpenCLFunctions:
                            local_size_0) > max_work_group_size_device:
                         local_size_1 = int(local_size_1 / 2)
             return (local_size_0, local_size_1), (global_size_0, global_size_1)
+
+        @staticmethod
+        def _get_global_size(width, height, chunk_size):
+            '''_get_global_size_picture Calculate the global size for an image processing operation.
+
+            This function calculates the global size for an image processing operation based on the width, height,
+            and chunk size.
+
+            Args:
+                width (int): Width of the image.
+                height (int): Height of the image.
+                chunk_size (int): Size of the chunks for processing.
+
+            Returns:
+                tuple: Global size for the image processing operation.
+            '''
+            return (opencl_math.ceil(width / chunk_size), height)

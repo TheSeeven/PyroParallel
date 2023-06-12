@@ -1,7 +1,7 @@
 class Kernels:
 
     GRAYSCALE = """
-    __kernel void grayscale(__global uchar *input,
+    __kernel void grayscale(__global const uchar *input,
                             __global uchar *output,
                             uint width,
                             ulong size,
@@ -27,14 +27,86 @@ class Kernels:
     }
     """
 
-    EDGE_DETECTION = "TODO"
-    DOUBLE_PRECISION = "TODO"
+    EDGE_DETECTION = """TODO"""
 
+    OPERATION_FP64 = """
+    __kernel void operation(__global const double* A,
+                           __global const double* B,
+                           __global double* C,
+                           const ulong length,
+                           const ulong chunk_size,
+                           const int operationType)
+    {
+        ulong index = get_global_id(0);
+        ulong remainder = get_global_id(1);
+        ulong startIndex = index * chunk_size;
+        ulong currentIndex;
+        for (ulong j = 0; j < chunk_size; j++) {
+            currentIndex = (startIndex + j)+(remainder*length);
+            
+            if (currentIndex < length) {
+                if (operationType == 0) {
+                    C[currentIndex] = A[currentIndex] / B[currentIndex];
+                }
+                else if (operationType == 1) {
+                    C[currentIndex] = A[currentIndex] * B[currentIndex];
+                }
+                else if (operationType == 2) {
+                    C[currentIndex] = A[currentIndex] + B[currentIndex];
+                }
+                else if (operationType == 3) {
+                    C[currentIndex] = A[currentIndex] - B[currentIndex];
+                }
+            }
+        }
+    }
+    """
+
+    OPERATION_FP32 = """ 
+    __kernel void operation(__global const float* A,
+                           __global const float* B,
+                           __global float* C,
+                           const ulong length,
+                           const ulong chunk_size,
+                           const int operationType)
+    {
+        ulong index = get_global_id(0);
+        ulong remainder = get_global_id(1);
+        ulong startIndex = index * chunk_size;
+        ulong currentIndex;
+        for (ulong j = 0; j < chunk_size; j++) {
+            currentIndex = (startIndex + j)+(remainder*length);
+            
+            if (currentIndex < length) {
+                if (operationType == 0) {
+                    C[currentIndex] = A[currentIndex] / B[currentIndex];
+                }
+                else if (operationType == 1) {
+                    C[currentIndex] = A[currentIndex] * B[currentIndex];
+                }
+                else if (operationType == 2) {
+                    C[currentIndex] = A[currentIndex] + B[currentIndex];
+                }
+                else if (operationType == 3) {
+                    C[currentIndex] = A[currentIndex] - B[currentIndex];
+                }
+            }
+        }
+    }
+    """
+
+    @staticmethod
     def _GRAYSCALE():
         return Kernels.GRAYSCALE
 
+    @staticmethod
     def _EDGE_DETECTION():
         return Kernels.EDGE_DETECTION
 
-    def _DOUBLE_PRECISION():
-        return Kernels.DOUBLE_PRECISION
+    @staticmethod
+    def _OPERATION_FP32():
+        return Kernels.OPERATION_FP32
+
+    @staticmethod
+    def _OPERATION_FP64():
+        return Kernels.OPERATION_FP64

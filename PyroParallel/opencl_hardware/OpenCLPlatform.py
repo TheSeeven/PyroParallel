@@ -78,7 +78,7 @@ class OpenCLPlatform:
     def _benchmark_grayscale(self):
         pass
 
-    def _benchmark_double_precision(self):
+    def _benchmark_operation_fp(self):
         pass
 
     def _benchmark_edge_detection(self):
