@@ -18,6 +18,8 @@ CYAN = "\x1b[36m"
 YELLOW = "\x1b[33m"
 
 OPENCL_GET_PLATFORMS = opencl_api.get_platforms
+DEVICE_MODE = 0
+PLATFORM_MODE = 1
 
 
 def _log(*args, end="\n", sep="", colour=RESET_COLOR):
@@ -59,6 +61,18 @@ class PyroParallel:
             if (emulation or "EMULATION" not in platform.name.upper()) and (
                 empty_platform or len(platform.get_devices()) > 0)
         ]
+        for platform in self.opencl_platforms:
+            platform._get_all_devices(exclude_CPU=self.exclude_CPU,
+                                      exclude_GPU=self.exclude_GPU,
+                                      exclude_FPGA=self.exclude_FPGA,
+                                      exclude_others=self.exclude_others)
+            platform._create_context_queue()
+
+        if not empty_platform:
+            self.opencl_platforms = [
+                platform for platform in self.opencl_platforms
+                if platform._is_platform_available()
+            ]
 
         return self.opencl_platforms
 
@@ -70,7 +84,8 @@ class PyroParallel:
                  exclude_GPU=False,
                  exclude_FPGA=False,
                  exclude_others=False,
-                 CHUNKCHUNK_PROCESSING_SIZE=1):
+                 processing_mode=DEVICE_MODE,
+                 CHUNK_PROCESSING_SIZE=1):
         '''__init__ \n
             The API object is created by initializing all platforms and devices based on filters. Arguments are optional and by default, all non-virtual devices are generated. 
             NOTE: Profiling is not included in the initialization and must be done afterward. 
@@ -83,7 +98,8 @@ class PyroParallel:
             exclude_GPU (bool, optional): Defaults to False. If True, no GPUs contexts will be generated.\n
             exclude_FPGA (bool, optional): Defaults to False. If True, no FPGAs contexts will be generated.\n
             exclude_others (bool, optional): Defaults to False. If True, no other contexts for devices that don't fit any other criteria will be generated.\n
-            exclude_others (int, optional): Defaults to 1. Sets how many bytes shall be processed in one work item. Increase this value if the maximum work item of a device is to low compared to the problem size
+            processing_mode (int,optional): Defaults to DEVICE_MODE. If DEVICE_MODE is selected, the framework will schedule items based on the individual device performance. If PLATFORM_MODE is selected, the framework will schedule items based on the platform performance. NOTE: better be left default.\n
+            CHUNK_PROCESSING_SIZE (int, optional): Defaults to 1. Sets how many bytes shall be processed in one work item. Increase this value if the maximum work item of a device is to low compared to the problem size
         '''
         global VERBOSE
         VERBOSE = verbose
@@ -93,11 +109,17 @@ class PyroParallel:
         self.exclude_GPU = exclude_GPU
         self.exclude_FPGA = exclude_FPGA
         self.exclude_others = exclude_others
-        self.CHUNKCHUNK_PROCESSING_SIZE = CHUNKCHUNK_PROCESSING_SIZE
+        self.CHUNK_PROCESSING_SIZE = CHUNK_PROCESSING_SIZE
         self.opencl_platforms = []
         self.opencl_devices = []
+        self.processing_mode = processing_mode
+        if not (self.processing_mode == DEVICE_MODE
+                or self.processing_mode == PLATFORM_MODE):
+            raise ParameterError(
+                "The processing mode value is incorrect, must be passed 1 for DEVICE_MODE or 2 for PLATFORM_MODE, got: {0}"
+                .format(str(processing_mode)))
         # Create all platform OpenCLPlatform objects
-        self._get_platforms(self.CHUNKCHUNK_PROCESSING_SIZE,
+        self._get_platforms(self.CHUNK_PROCESSING_SIZE,
                             emulation=emulation,
                             empty_platform=empty_platform)
 
@@ -107,13 +129,15 @@ class PyroParallel:
                                       exclude_GPU=self.exclude_GPU,
                                       exclude_FPGA=self.exclude_FPGA,
                                       exclude_others=self.exclude_others)
-            platform._create_context_queue()
+            platform._build_kernels()
+            platform._get_max_work_group_size()
+            platform._get_max_work_items_size()
             # Get all devices and create contexts for them
             for device in platform.devices:
                 self.opencl_devices.append(
                     OpenCLDevice(
                         device=device,
-                        CHUNK_PROCESSING_SIZE=self.CHUNKCHUNK_PROCESSING_SIZE))
+                        CHUNK_PROCESSING_SIZE=self.CHUNK_PROCESSING_SIZE))
 
         _log(
             "Resources initialised with EMULATION: {0} and EMPTY_PLATFORMS {1}"
@@ -149,6 +173,32 @@ class PyroParallel:
             result = prefix + "fp64_"
 
         return result
+
+    def _get_hardware_resources(self, required_extensions):
+        result = None
+
+        if self.processing_mode == PLATFORM_MODE:
+            result = [
+                platform for platform in self.opencl_platforms if all([
+                    platform._supports_hardware_extensions(extension)
+                    for extension in required_extensions
+                ])
+            ]
+        elif self.processing_mode == DEVICE_MODE:
+            result = [
+                device for device in self.opencl_devices if all([
+                    device._supports_hardware_extensions(extension)
+                    for extension in required_extensions
+                ])
+            ]
+
+        return result
+
+    def set_processing_device_mode(self):
+        self.processing_mode = DEVICE_MODE
+
+    def set_processing_platform_mode(self):
+        self.processing_mode = PLATFORM_MODE
 
     def get_all_devices_contexts(self):
         '''get_all_devices_contexts Returns all contexts for each individual devices. 
@@ -201,37 +251,37 @@ class PyroParallel:
             numpy.ndarray: Returned results have the same length as the input, the same datatype but with grayscale applied
         '''
         result = None
-        if len(images) > 0:
-            required_extensions = []
-            supported_devices = [
-                device for device in self.opencl_devices if all([
-                    device._supports_hardware_extensions(extension)
-                    for extension in required_extensions
-                ])
-            ]
-            if len(supported_devices) > 0:
-                result = []
-                device_queues = {}
-                device_queues_status = {}
 
-                selected_device = None
-                for device in supported_devices:
-                    device_queues[device] = []
-                    device_queues_status[device] = 0
-                device_queues = dict(
-                    sorted(device_queues.items(),
+        required_extensions = []
+        hardware_resources = self._get_hardware_resources(required_extensions)
+
+        if len(images) > 0:
+            if len(hardware_resources) > 0:
+                result = []
+                hardware_resource_queues = {}
+                hardware_resource_queues_status = {}
+
+                selected_hardware_resource = None
+                for hardware_resource in hardware_resources:
+                    hardware_resource_queues[hardware_resource] = []
+                    hardware_resource_queues_status[hardware_resource] = 0
+                hardware_resource_queues = dict(
+                    sorted(hardware_resource_queues.items(),
                            key=lambda x: -x[0].profiling["_grayscale"]))
                 for image in images:
-                    for device in device_queues:
-                        device_queues_status[
-                            device] = OpenCLFunctions.Pictures.get_work_amount(
-                                device_queues[device])
-                    selected_device = min(
-                        device_queues_status,
-                        key=device_queues_status.get)  # type: ignore
-                    device_queues[selected_device].append(
-                        selected_device._grayscale(image))
-                for device, events in device_queues.items():
+                    for hardware_resource in hardware_resource_queues:
+                        hardware_resource_queues_status[
+                            hardware_resource] = OpenCLFunctions.Pictures.get_work_amount(
+                                hardware_resource_queues[hardware_resource])
+                    selected_hardware_resource = min(
+                        hardware_resource_queues_status,
+                        key=hardware_resource_queues_status.get
+                    )  # type: ignore
+                    hardware_resource_queues[
+                        selected_hardware_resource].append(
+                            selected_hardware_resource._grayscale(image))
+                for hardware_resources, events in hardware_resource_queues.items(
+                ):
                     for event in events:
                         event.opencl_fetch_result_event.wait()
                         result.append(event.result_numpy)
@@ -338,7 +388,7 @@ class PyroParallel:
         '''benchmark_api Creates the performance indexes so that the API when processes functions it will know the performance of devices before the processing starts. 
         If this is not executed, equal performance indexes are asssigned to all devices and while processing, the API will learn and adjust the indexes based on the measured performance.
         '''
-
+        functions = None
         for platform in self.opencl_platforms:
             platform._benchmark()
         for device in self.opencl_devices:
@@ -348,20 +398,38 @@ class PyroParallel:
                             for function_name in device.profiling)
 
             for function in functions:
-                times = {}
+                times_device = {}
+                times_platform = {}
+                ### devices time calculation
                 for device_index in range(len(self.opencl_devices)):
                     device = self.opencl_devices[device_index]
                     try:
-                        times[device] = device.profiling[function]
+                        times_device[device] = device.profiling[function]
                     except:
                         pass
-                times = OpenCLFunctions.Time.calculate_performance_scores(
-                    times)
+                times_device = OpenCLFunctions.Time.calculate_performance_scores(
+                    times_device)
                 for device in self.opencl_devices:
                     try:
-                        device.profiling[function] = times[device]
+                        device.profiling[function] = times_device[device]
                     except:
                         pass
+
+                ### platform time calculation
+                for platform_index in range(len(self.opencl_platforms)):
+                    platform = self.opencl_platforms[platform_index]
+                    try:
+                        times_platform[platform] = platform.profiling[function]
+                    except:
+                        pass
+                times_platform = OpenCLFunctions.Time.calculate_performance_scores(
+                    times_platform)
+                for platform in self.opencl_platforms:
+                    try:
+                        platform.profiling[function] = times_platform[platform]
+                    except:
+                        pass
+
         else:
             raise ResourceAvailability(
                 "No hardware resources available for framework usage, 0 devices initialised"

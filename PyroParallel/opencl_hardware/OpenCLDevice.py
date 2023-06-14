@@ -7,6 +7,7 @@ import numpy as opencl_device_numpy
 from .exception.device_exception import *
 from .OpenCLBuffer import OpenCLBuffer
 from .OpenCLFunctions import OpenCLFunctions
+from .OpenCLVersion import OpenCLVersion
 from .OpenCLKernels import Kernels
 # Proprietary import
 
@@ -30,6 +31,7 @@ READ_ONLY = opencl_device.mem_flags.READ_ONLY
 ALLOC_HOST_PTR = opencl_device.mem_flags.ALLOC_HOST_PTR
 NUMPY_EMPTY = opencl_device_numpy.empty_like
 NUMPY_FULL = opencl_device_numpy.full
+NUMPY_AVG = opencl_device_numpy.average
 
 
 class OpenCLDevice:
@@ -49,12 +51,11 @@ class OpenCLDevice:
         self.device_name = self.device.name
         self.device_type = self.device.type,
         self.hardware_extensions = self.device.extensions
-        self.queue = OPENCL_QUEUE(
-            self.context,
-            properties=OPENCL_PROFILING,
-        )
+        self.version = OpenCLVersion(device.version)
+        self.queue = OPENCL_QUEUE(self.context, properties=OPENCL_PROFILING)
         self.CHUNK_PROCESSING_SIZE = CHUNK_PROCESSING_SIZE
         self.max_work_group_size_device = self.device.max_work_group_size
+        self.max_work_items_device = self.device.max_work_item_sizes
         self.profiling = {}
         self.kernels = {}
         self.kernels["_grayscale"] = OPENCL_PROGRAM(
@@ -77,6 +78,107 @@ class OpenCLDevice:
 
     def __str__(self):
         return self.device_name
+
+### DEVICE FUNCTIONS BEGIN
+
+    def _grayscale(self, input_image):
+        result = OpenCLBuffer(
+            OPENCL_BUFFER(self.context,
+                          READ_WRITE
+                          | ALLOC_HOST_PTR,
+                          size=input_image.size),
+            OPENCL_BUFFER(self.context,
+                          READ_WRITE
+                          | ALLOC_HOST_PTR,
+                          size=input_image.size), NUMPY_EMPTY(input_image))
+        result.opencl_fetch_input_event = ENQUEUE_COPY_ASYNC(
+            self.queue,
+            result.opencl_buffer_input,
+            input_image,
+            is_blocking=None,
+            wait_for=None)
+
+        program = self.kernels["_grayscale"].grayscale
+        program.set_args(result.opencl_buffer_input,
+                         result.opencl_buffer_output,
+                         OPENCL_uint32(input_image.shape[0]),
+                         OPENCL_uint64(result.size),
+                         OPENCL_uint64(self.CHUNK_PROCESSING_SIZE))
+        max_work_group_size_kernel = self._get_max_work_group(program)
+        prefered_local_size = self._get_prefered_local_size(program)
+        global_size = OpenCLFunctions.OpenCLScheduler._get_global_size(
+            input_image.shape[0], input_image.shape[1],
+            self.CHUNK_PROCESSING_SIZE)
+        local_size, global_size = OpenCLFunctions.OpenCLScheduler._get_optimal_local_global_size(
+            global_size, max_work_group_size_kernel,
+            self.max_work_group_size_device, self.max_work_items_device,
+            prefered_local_size)
+
+        result.opencl_input_processing_event = ENQUEUE_PROCESS_ASYNC(
+            self.queue, program, global_size, local_size, wait_for=None)
+        result.opencl_fetch_result_event = ENQUEUE_COPY_ASYNC(
+            self.queue,
+            result.result_numpy,
+            result.opencl_buffer_output,
+            is_blocking=None,
+            wait_for=None)
+
+        return result
+
+    def _operation_fp(self, A, B, operation, precision):
+        result = OpenCLBuffer([
+            OPENCL_BUFFER(self.context,
+                          READ_ONLY | ALLOC_HOST_PTR,
+                          size=A.size * A.itemsize),
+            OPENCL_BUFFER(self.context,
+                          READ_ONLY | ALLOC_HOST_PTR,
+                          size=B.size * B.itemsize)
+        ],
+                              OPENCL_BUFFER(self.context,
+                                            READ_WRITE | ALLOC_HOST_PTR,
+                                            size=A.size * A.itemsize),
+                              NUMPY_EMPTY(A))
+        result.opencl_fetch_input_event = [
+            ENQUEUE_COPY_ASYNC(self.queue,
+                               result.opencl_buffer_input[0],
+                               A,
+                               is_blocking=False,
+                               wait_for=None),
+            ENQUEUE_COPY_ASYNC(self.queue,
+                               result.opencl_buffer_input[1],
+                               B,
+                               is_blocking=False,
+                               wait_for=None)
+        ]
+
+        program = self.kernels["_operation_fp" + str(precision)].operation
+        program.set_args(result.opencl_buffer_input[0],
+                         result.opencl_buffer_input[1],
+                         result.opencl_buffer_output,
+                         OPENCL_uint64(A.shape[0]),
+                         OPENCL_uint64(self.CHUNK_PROCESSING_SIZE),
+                         OPENCL_int32(operation))
+        max_work_group_size_kernel = self._get_max_work_group(program)
+        prefered_local_size = self._get_prefered_local_size(program)
+        global_size = OpenCLFunctions.OpenCLScheduler._get_global_size(
+            A.size, 1, self.CHUNK_PROCESSING_SIZE)
+        local_size, global_size = OpenCLFunctions.OpenCLScheduler._get_optimal_local_global_size(
+            global_size, max_work_group_size_kernel,
+            self.max_work_group_size_device, self.max_work_items_device,
+            prefered_local_size)
+
+        result.opencl_input_processing_event = ENQUEUE_PROCESS_ASYNC(
+            self.queue, program, global_size, local_size, wait_for=None)
+        result.opencl_fetch_result_event = ENQUEUE_COPY_ASYNC(
+            self.queue,
+            result.result_numpy,
+            result.opencl_buffer_output,
+            wait_for=None,
+            is_blocking=False)
+
+        return result
+
+###DEVICE FUNCTIONS END
 
 ### BENCHMARK BEGIN
 
@@ -105,7 +207,7 @@ class OpenCLDevice:
             self.CHUNK_PROCESSING_SIZE)
         local_size, global_size = OpenCLFunctions.OpenCLScheduler._get_optimal_local_global_size(
             global_size, max_work_group_size_kernel,
-            self.device.max_work_group_size, self.device.max_work_item_sizes,
+            self.max_work_group_size_device, self.max_work_items_device,
             prefered_local_size)
 
         timetable = []
@@ -129,10 +231,10 @@ class OpenCLDevice:
 
             time = opencl_buffers.opencl_fetch_result_event.profile.end - opencl_buffers.opencl_fetch_input_event.profile.start
             timetable.append(time)
-        self.profiling['_grayscale'] = opencl_device_numpy.average(timetable)
+        self.profiling['_grayscale'] = NUMPY_AVG(timetable)
 
     def _benchmark_operation_fp(self):
-        TEST_SIZE = 1000
+        TEST_SIZE = 2000
         for operation in self.kernels:
             if "_operation_" in operation:
                 FLOAT_BYTES = globals()["OPENCL_float" +
@@ -145,8 +247,8 @@ class OpenCLDevice:
                     TEST_SIZE, 1, self.CHUNK_PROCESSING_SIZE)
                 local_size, global_size = OpenCLFunctions.OpenCLScheduler._get_optimal_local_global_size(
                     global_size, max_work_group_size_kernel,
-                    self.device.max_work_group_size,
-                    self.device.max_work_item_sizes, prefered_local_size)
+                    self.max_work_group_size_device,
+                    self.max_work_items_device, prefered_local_size)
 
                 fp_benchmark_A = NUMPY_FULL((TEST_SIZE, ),
                                             fill_value=1.7456,
@@ -242,121 +344,17 @@ class OpenCLDevice:
                         time = opencl_buffer.opencl_fetch_result_event.profile.end - opencl_buffer.opencl_fetch_input_event[
                             0].profile.start
                         timetable.append(time)
-                    self.profiling[
-                        operation + "_" +
-                        operation_name] = opencl_device_numpy.average(
-                            timetable)
+                    self.profiling[operation + "_" +
+                                   operation_name] = NUMPY_AVG(timetable)
 
     def _benchmark_edge_detection(self):
         pass
 
     def _benchmark(self):
-        self._benchmark_grayscale()
-        self._benchmark_operation_fp()
-        self._benchmark_edge_detection()
+        if self.context is not None:
+            self._benchmark_grayscale()
+            self._benchmark_operation_fp()
+            self._benchmark_edge_detection()
+
+
 ### BENCHMARK END
-
-### DEVICE FUNCTIONS BEGIN
-
-    def _grayscale(self, input_image):
-        result = OpenCLBuffer(
-            OPENCL_BUFFER(self.context,
-                          READ_WRITE
-                          | ALLOC_HOST_PTR,
-                          size=input_image.size),
-            OPENCL_BUFFER(self.context,
-                          READ_WRITE
-                          | ALLOC_HOST_PTR,
-                          size=input_image.size), NUMPY_EMPTY(input_image))
-        result.opencl_fetch_input_event = ENQUEUE_COPY_ASYNC(
-            self.queue,
-            result.opencl_buffer_input,
-            input_image,
-            is_blocking=None,
-            wait_for=None)
-
-        program = self.kernels["_grayscale"].grayscale
-        program.set_args(result.opencl_buffer_input,
-                         result.opencl_buffer_output,
-                         OPENCL_uint32(input_image.shape[0]),
-                         OPENCL_uint64(result.size),
-                         OPENCL_uint64(self.CHUNK_PROCESSING_SIZE))
-        max_work_group_size_kernel = self._get_max_work_group(program)
-        prefered_local_size = self._get_prefered_local_size(program)
-        global_size = OpenCLFunctions.OpenCLScheduler._get_global_size(
-            input_image.shape[0], input_image.shape[1],
-            self.CHUNK_PROCESSING_SIZE)
-        local_size, global_size = OpenCLFunctions.OpenCLScheduler._get_optimal_local_global_size(
-            global_size, max_work_group_size_kernel,
-            self.device.max_work_group_size, self.device.max_work_item_sizes,
-            prefered_local_size)
-
-        result.opencl_input_processing_event = ENQUEUE_PROCESS_ASYNC(
-            self.queue, program, global_size, local_size, wait_for=None)
-        result.opencl_fetch_result_event = ENQUEUE_COPY_ASYNC(
-            self.queue,
-            result.result_numpy,
-            result.opencl_buffer_output,
-            is_blocking=None,
-            wait_for=None)
-
-        return result
-
-    def _operation_fp(self, A, B, operation, precision):
-        result = OpenCLBuffer([
-            OPENCL_BUFFER(self.context,
-                          READ_ONLY | ALLOC_HOST_PTR,
-                          size=A.size * A.itemsize),
-            OPENCL_BUFFER(self.context,
-                          READ_ONLY | ALLOC_HOST_PTR,
-                          size=B.size * B.itemsize)
-        ],
-                              OPENCL_BUFFER(self.context,
-                                            READ_WRITE | ALLOC_HOST_PTR,
-                                            size=A.size * A.itemsize),
-                              NUMPY_EMPTY(A))
-        result.opencl_fetch_input_event = [
-            ENQUEUE_COPY_ASYNC(self.queue,
-                               result.opencl_buffer_input[0],
-                               A,
-                               is_blocking=False,
-                               wait_for=None),
-            ENQUEUE_COPY_ASYNC(self.queue,
-                               result.opencl_buffer_input[1],
-                               B,
-                               is_blocking=False,
-                               wait_for=None)
-        ]
-
-        program = self.kernels["_operation_fp" + str(precision)].operation
-        program.set_args(result.opencl_buffer_input[0],
-                         result.opencl_buffer_input[1],
-                         result.opencl_buffer_output,
-                         OPENCL_uint64(A.shape[0]),
-                         OPENCL_uint64(self.CHUNK_PROCESSING_SIZE),
-                         OPENCL_int32(operation))
-        max_work_group_size_kernel = program.get_work_group_info(
-            opencl_device.kernel_work_group_info.WORK_GROUP_SIZE, self.device)
-        prefered_local_size = program.get_work_group_info(
-            opencl_device.kernel_work_group_info.
-            PREFERRED_WORK_GROUP_SIZE_MULTIPLE, self.device)
-        global_size = OpenCLFunctions.OpenCLScheduler._get_global_size(
-            A.size, 1, self.CHUNK_PROCESSING_SIZE)
-        local_size, global_size = OpenCLFunctions.OpenCLScheduler._get_optimal_local_global_size(
-            global_size, max_work_group_size_kernel,
-            self.device.max_work_group_size, self.device.max_work_item_sizes,
-            prefered_local_size)
-
-        result.opencl_input_processing_event = ENQUEUE_PROCESS_ASYNC(
-            self.queue, program, global_size, local_size, wait_for=None)
-        result.opencl_fetch_result_event = ENQUEUE_COPY_ASYNC(
-            self.queue,
-            result.result_numpy,
-            result.opencl_buffer_output,
-            wait_for=None,
-            is_blocking=False)
-
-        return result
-
-
-###DEVICE FUNCTIONS END

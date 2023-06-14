@@ -27,3 +27,10 @@ class ParameterError(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
+
+class ApiStateError(Exception):
+
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
