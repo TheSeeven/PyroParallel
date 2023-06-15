@@ -310,7 +310,12 @@ class PyroParallel:
         Returns:
             numpy.ndarray: This is the final result after aplying the desired operation the the two inputs
         '''
+
         result = None
+
+        required_extensions = []
+        hardware_resources = []
+
         if not isinstance(A, list) or not isinstance(B, list):
             raise ParameterError(
                 "Type of arg1 and arg2 not correct, got: arg1: {0} arg2: {1} ".
@@ -320,50 +325,53 @@ class PyroParallel:
             raise ParameterError(
                 "The precision value is invalid, got: precision: {0}".format(
                     str(precision)))
-        if len(A) == len(B):
+
+        if precision == PyroParallel.FP64:
+            required_extensions = ['cl_khr_fp64']
+        elif precision == PyroParallel.FP32:
             required_extensions = []
-            if precision == PyroParallel.FP64:
-                required_extensions.append('cl_khr_fp64')
-            supported_devices = [
-                device for device in self.opencl_devices if all([
-                    device._supports_hardware_extensions(extension)
-                    for extension in required_extensions
-                ])
-            ]
-            if len(supported_devices) > 0:
+
+        hardware_resources = self._get_hardware_resources(required_extensions)
+
+        if len(A) == len(B):
+            if len(hardware_resources) > 0:
                 operation_name = PyroParallel._get_operation_name(
                     PyroParallel._get_operation_precision_name(
                         "_operation_", precision), operation)
                 if operation_name is not None:
                     result = []
                     input_length = len(A)
-                    device_queues = {}
-                    device_queues_status = {}
+                    hardware_resources_queues = {}
+                    hardware_resources_queues_status = {}
 
                     temp_A = None
                     temp_B = None
 
-                    selected_device = None
-                    for device in supported_devices:
-                        device_queues[device] = []
-                        device_queues_status[device] = 0
-                    device_queues = dict(
-                        sorted(device_queues.items(),
+                    selected_hardware_resource = None
+                    for hardware_resource in hardware_resources:
+                        hardware_resources_queues[hardware_resource] = []
+                        hardware_resources_queues_status[hardware_resource] = 0
+                    hardware_resources_queues = dict(
+                        sorted(hardware_resources_queues.items(),
                                key=lambda x: -x[0].profiling[operation_name]))
                     for input_index in range(input_length):
                         temp_A = A[input_index]
                         temp_B = B[input_index]
-                        for device in device_queues:
-                            device_queues_status[
-                                device] = OpenCLFunctions.Pictures.get_work_amount(  # create a function specific for operations since it has more ev queues
-                                    device_queues[device])
-                        selected_device = min(
-                            device_queues_status,
-                            key=device_queues_status.get)  # type: ignore
-                        device_queues[selected_device].append(
-                            selected_device._operation_fp(
-                                temp_A, temp_B, operation, precision))
-                    for device, events in device_queues.items():
+                        for hardware_resource in hardware_resources_queues:
+                            hardware_resources_queues_status[
+                                hardware_resource] = OpenCLFunctions.Pictures.get_work_amount(  # create a function specific for operations since it has more ev queues
+                                    hardware_resources_queues[
+                                        hardware_resource])
+                        selected_hardware_resource = min(
+                            hardware_resources_queues_status,
+                            key=hardware_resources_queues_status.get
+                        )  # type: ignore
+                        hardware_resources_queues[
+                            selected_hardware_resource].append(
+                                selected_hardware_resource._operation_fp(
+                                    temp_A, temp_B, operation, precision))
+                    for hardware_resource, events in hardware_resources_queues.items(
+                    ):
                         for event in events:
                             event.opencl_fetch_result_event.wait()
                             result.append(event.result_numpy)

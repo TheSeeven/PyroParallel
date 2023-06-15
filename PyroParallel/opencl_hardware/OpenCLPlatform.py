@@ -246,7 +246,7 @@ class OpenCLPlatform:
             A.size, 1, self.CHUNK_PROCESSING_SIZE)
         local_size, global_size = OpenCLFunctions.OpenCLScheduler._get_optimal_local_global_size(
             global_size, max_work_group_size_kernel,
-            self.max_work_group_size_device, self.max_work_items_device,
+            self.max_work_group_size_platform, self.max_work_items_platform,
             prefered_local_size)
 
         result.opencl_input_processing_event = ENQUEUE_PROCESS_ASYNC(
