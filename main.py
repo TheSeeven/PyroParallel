@@ -2,6 +2,9 @@ import PyroParallel as Pyro
 import numpy as np
 import time
 import os
+from PIL import Image
+
+Image.MAX_IMAGE_PIXELS = None
 ### TESTING PANNEL
 TEST_ALL = 0
 TEST_ONLY_CPU = 1
@@ -18,7 +21,7 @@ Framework_all = Pyro.PyroParallel(verbose=True,
                                   exclude_others=True,
                                   emulation=False,
                                   processing_mode=PROCESSING_MODE,
-                                  CHUNK_PROCESSING_SIZE=4)
+                                  CHUNK_PROCESSING_SIZE=1)
 Framework_only_CPU = Pyro.PyroParallel(verbose=True,
                                        exclude_FPGA=True,
                                        exclude_others=True,
@@ -51,6 +54,7 @@ Framework_only_CPU.benchmark_api()
 Framework_only_GPUS.benchmark_api()
 Framework_only_iGPU.benchmark_api()
 
+### TEST DATA
 NUMBER_OF_TESTS = 20
 TEST_DATA = [
     np.full((3000, 3000, 3), 255, dtype=np.uint8)
@@ -62,9 +66,27 @@ TEST_FP32_B = np.full(100, 2.0, dtype=np.float32)
 
 TEST_FP64_A = np.full(100, 1.0, dtype=np.float64)
 TEST_FP64_B = np.full(100, 2.0, dtype=np.float64)
+input_image = np.array(Image.open("./sample_data/5120x2880_1_NO_HDR.bmp"))
+EDGE_DETECTION_SAMPLE_IMAGE = Framework_all.grayscale(
+    [input_image for x in range(50)], autosave=True)
+
+### TEST DATA
 
 ### FUNCTIONALITY TESTING
 
+# x = Framework_all.edge_detection(EDGE_DETECTION_SAMPLE_IMAGE,
+#                                  120,
+#                                  autosave=True)
+x = Framework_only_CPU.edge_detection(EDGE_DETECTION_SAMPLE_IMAGE,
+                                      120,
+                                      autosave=True)
+x = Framework_only_GPUS.edge_detection(EDGE_DETECTION_SAMPLE_IMAGE,
+                                       120,
+                                       autosave=True)
+x = Framework_only_iGPU.edge_detection(EDGE_DETECTION_SAMPLE_IMAGE,
+                                       120,
+                                       autosave=True)
+quit()
 if TEST_MODE == TEST_ALL:
     # grayscale tests
     Framework_all.grayscale(TEST_DATA, autosave=True)

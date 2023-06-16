@@ -389,8 +389,57 @@ class PyroParallel:
                 .format(str(len(A)), str(len(B))))
         return result
 
-    def edge_detection(self):
-        pass
+    def edge_detection(self, images, threshold, autosave=False):
+        result = None
+
+        required_extensions = []
+        hardware_resources = self._get_hardware_resources(required_extensions)
+
+        if len(images) > 0:
+            if len(hardware_resources) > 0:
+                if isinstance(threshold, int):
+                    result = []
+                    hardware_resource_queues = {}
+                    hardware_resource_queues_status = {}
+
+                    selected_hardware_resource = None
+                    for hardware_resource in hardware_resources:
+                        hardware_resource_queues[hardware_resource] = []
+                        hardware_resource_queues_status[hardware_resource] = 0
+                    hardware_resource_queues = dict(
+                        sorted(
+                            hardware_resource_queues.items(),
+                            key=lambda x: -x[0].profiling["_edge_detection"]))
+                    for image in images:
+                        for hardware_resource in hardware_resource_queues:
+                            hardware_resource_queues_status[
+                                hardware_resource] = OpenCLFunctions.Pictures.get_work_amount(
+                                    hardware_resource_queues[hardware_resource]
+                                )
+                        selected_hardware_resource = min(
+                            hardware_resource_queues_status,
+                            key=hardware_resource_queues_status.get
+                        )  # type: ignore
+                        hardware_resource_queues[
+                            selected_hardware_resource].append(
+                                selected_hardware_resource._edge_detection(
+                                    image, threshold))
+                    for hardware_resources, events in hardware_resource_queues.items(
+                    ):
+                        for event in events:
+                            event.opencl_fetch_result_event.wait()
+                            result.append(event.result_numpy)
+                    if autosave:
+                        for output in result:
+                            OpenCLFunctions.Pictures.save_array_as_image(
+                                output, "./output_test/")
+                else:
+                    raise ParameterError(
+                        "Invalid parameters, got: threshold={})".format(
+                            threshold))
+            else:
+                raise UnsuportedFunctionality("grayscale", required_extensions)
+        return result
 
     def benchmark_api(self):
         '''benchmark_api Creates the performance indexes so that the API when processes functions it will know the performance of devices before the processing starts. 
@@ -423,7 +472,7 @@ class PyroParallel:
                     except:
                         pass
 
-                ### platform time calculation
+                # platform time calculation
                 for platform_index in range(len(self.opencl_platforms)):
                     platform = self.opencl_platforms[platform_index]
                     try:

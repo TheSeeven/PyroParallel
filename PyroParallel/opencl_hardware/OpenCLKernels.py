@@ -27,7 +27,57 @@ class Kernels:
     }
     """
 
-    EDGE_DETECTION = """TODO"""
+    EDGE_DETECTION = """
+__kernel void edge_detection(__global const uchar* inputImage, __global uchar* outputImage, const uint width, const uint height, uint threshold)
+{
+    int gx[3][3] = {{-1, 0, 1},
+                    {-2, 0, 2},
+                    {-1, 0, 1}};
+                    
+    int gy[3][3] = {{1, 2, 1},
+                    {0, 0, 0},
+                    {-1, -2, -1}};
+    
+    int2 gid = (int2)(get_global_id(0), get_global_id(1));
+    
+    int outputIdx = (gid.y * width + gid.x) * 3;
+    
+    if ((gid.x < 1 || gid.x >= width - 1 || gid.y < 1 || gid.y >= height - 1) && outputIdx < (width * height * 3)-2) {
+        outputImage[outputIdx + 0] = 0;
+        outputImage[outputIdx + 1] = 0;
+        outputImage[outputIdx + 2] = 0;
+        return;
+    }
+    
+    int sumX = 0;
+    int sumY = 0;
+    
+    for (int i = -1; i <= 1; ++i) {
+        for (int j = -1; j <= 1; ++j) {
+            int2 offset = (int2)(gid.x + j, gid.y + i);
+            int2 kernelIdx = (int2)(i + 1, j + 1);
+            
+            int imageIdx = (offset.y * width + offset.x) * 3;
+            if(imageIdx<(width * height * 3)-2){
+            
+                sumX += gx[kernelIdx.x][kernelIdx.y] * inputImage[imageIdx];
+                sumY += gy[kernelIdx.x][kernelIdx.y] * inputImage[imageIdx];
+            }
+        }
+    }
+    
+    int magnitude = (int)(sqrt((float)(sumX * sumX + sumY * sumY)));
+    
+    uchar pixelValue = (magnitude > threshold) ? 255 : 0;
+    
+    if(outputIdx < ((width * height * 3)-2)){
+        outputImage[outputIdx] = pixelValue;
+        outputImage[outputIdx + 1] = pixelValue;
+        outputImage[outputIdx + 2] = pixelValue;   
+    }
+}
+
+"""
 
     OPERATION_FP64 = """
     __kernel void operation(__global const double* A,
