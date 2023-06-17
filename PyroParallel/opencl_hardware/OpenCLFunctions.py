@@ -39,6 +39,7 @@ class OpenCLFunctions:
 
         counter = 0
 
+        @staticmethod
         def save_array_as_text(array, path, precision):
             '''Save an array as a text file.
 
@@ -52,6 +53,7 @@ class OpenCLFunctions:
                 fmt = '%.8f'
             elif precision == OpenCLFunctions.FP64:
                 fmt = '%.16f'
+
             numpy_function.savetxt(
                 path + str(OpenCLFunctions.Operation.counter) + ".txt",
                 array,

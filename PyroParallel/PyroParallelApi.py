@@ -151,6 +151,7 @@ class PyroParallel:
             _log("{0}:{1}".format(str(counter), str(platform)), colour=CYAN)
             counter += 1
 
+    @staticmethod
     def _get_operation_name(prefix, operation):
         result = None
 
@@ -165,6 +166,7 @@ class PyroParallel:
 
         return result
 
+    @staticmethod
     def _get_operation_precision_name(prefix, precision):
         result = None
         if precision == PyroParallel.FP32:
@@ -254,7 +256,6 @@ class PyroParallel:
 
         required_extensions = []
         hardware_resources = self._get_hardware_resources(required_extensions)
-
         if len(images) > 0:
             if len(hardware_resources) > 0:
                 result = []
@@ -275,7 +276,7 @@ class PyroParallel:
                                 hardware_resource_queues[hardware_resource])
                     selected_hardware_resource = min(
                         hardware_resource_queues_status,
-                        key=hardware_resource_queues_status.get
+                        key=hardware_resource_queues_status.get  # type: ignore
                     )  # type: ignore
                     hardware_resource_queues[
                         selected_hardware_resource].append(
@@ -364,7 +365,8 @@ class PyroParallel:
                                         hardware_resource])
                         selected_hardware_resource = min(
                             hardware_resources_queues_status,
-                            key=hardware_resources_queues_status.get
+                            key=hardware_resources_queues_status.
+                            get  # type: ignore
                         )  # type: ignore
                         hardware_resources_queues[
                             selected_hardware_resource].append(
@@ -390,6 +392,15 @@ class PyroParallel:
         return result
 
     def edge_detection(self, images, threshold, autosave=False):
+        '''edge_detection Applies Sobel edge detection using two 3x3 matrix to detect horizonal and vertical lines. The threshold value if it is over below 255 it will set to 0 the pixels below the threshold. If the value is above or equal to 255 it will not apply any thresholdings.
+
+        Args:
+            images (numpy.ndarray): A list of numpy.ndarray pictures. The pictures bust be grayscale and must still have all the RGB channels.
+            threshold (int): This will eliminate weak pixels from a screen. if a value is set, it will make the pixels darker than this value black. the rest will remain untouched.
+
+        Returns:
+            numpy.ndarray: Returns a list of numpy arrays with the result of the processing.
+        '''
         result = None
 
         required_extensions = []
@@ -418,7 +429,8 @@ class PyroParallel:
                                 )
                         selected_hardware_resource = min(
                             hardware_resource_queues_status,
-                            key=hardware_resource_queues_status.get
+                            key=hardware_resource_queues_status.
+                            get  # type: ignore
                         )  # type: ignore
                         hardware_resource_queues[
                             selected_hardware_resource].append(

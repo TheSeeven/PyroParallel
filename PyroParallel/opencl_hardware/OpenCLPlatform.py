@@ -93,10 +93,13 @@ class OpenCLPlatform:
         return self.devices
 
     def _create_context_queue(self):
-        if not self.context and len(self.devices) > 0:
-            self.context = OPENCL_CONTEXT(self.devices)
-            self.queue = OPENCL_QUEUE(self.context,
-                                      properties=OPENCL_PROFILING)
+        if self.devices is not None:
+            if not self.context and len(self.devices) > 0:
+                self.context = OPENCL_CONTEXT(self.devices)
+                self.queue = OPENCL_QUEUE(self.context,
+                                          properties=OPENCL_PROFILING)
+        else:
+            raise
 
     def _build_kernels(self):
         if self.context:
@@ -111,56 +114,75 @@ class OpenCLPlatform:
                 self.context, Kernels._EDGE_DETECTION()).build()
 
     def _get_max_work_group_size(self):
-        for device in self.devices:
-            if not self.max_work_group_size_platform:
-                self.max_work_group_size_platform = device.max_work_group_size
-            if device.max_work_group_size > self.max_work_group_size_platform:
-                self.max_work_group_size_platform = device.max_work_group_size
+        if self.devices is not None:
+            for device in self.devices:
+                if not self.max_work_group_size_platform:
+                    self.max_work_group_size_platform = device.max_work_group_size
+                if device.max_work_group_size > self.max_work_group_size_platform:
+                    self.max_work_group_size_platform = device.max_work_group_size
+        else:
+            raise ResourceAvailability("No devices available")
 
     def _get_max_work_items_size(self):
-        for device in self.devices:
-            if not self.max_work_items_platform:
-                self.max_work_items_platform = device.max_work_item_sizes
-            elif NUMPY_PROD(device.max_work_item_sizes) > NUMPY_PROD(
-                    self.max_work_items_platform):
-                self.max_work_items_platform = device.max_work_item_sizes
+        if self.devices is not None:
+            for device in self.devices:
+                if not self.max_work_items_platform:
+                    self.max_work_items_platform = device.max_work_item_sizes
+                elif NUMPY_PROD(device.max_work_item_sizes) > NUMPY_PROD(
+                        self.max_work_items_platform):
+                    self.max_work_items_platform = device.max_work_item_sizes
+        else:
+            raise ResourceAvailability("No devices available")
 
     def __str__(self):
-        res = "Platform {0} with platform version {1} and {2} devices:\n".format(
-            self.name, str(self.version), len(self.devices))
-        for device in self.devices:
-            res = res + "    {0}\n".format(str(device))
-        return res
+        result = None
+        if self.devices is not None:
+            result = "Platform {0} with platform version {1} and {2} devices:\n".format(
+                self.name, str(self.version), len(self.devices))
+            for device in self.devices:
+                result = result + "    {0}\n".format(str(device))
+        else:
+            raise ResourceAvailability("No devices available")
+        return result
 
     def _get_max_work_group(self, program):
         primary_device = None
-        for device in self.devices:
-            if not primary_device:
-                primary_device = device
-            elif program.get_work_group_info(
-                    OPENCL_WORK_GROUP_SIZE,
-                    device) > program.get_work_group_info(
-                        OPENCL_WORK_GROUP_SIZE, primary_device):
-                primary_device = device
-
-        return program.get_work_group_info(OPENCL_WORK_GROUP_SIZE,
-                                           primary_device)
+        result = None
+        if self.devices is not None:
+            for device in self.devices:
+                if not primary_device:
+                    primary_device = device
+                elif program.get_work_group_info(
+                        OPENCL_WORK_GROUP_SIZE,
+                        device) > program.get_work_group_info(
+                            OPENCL_WORK_GROUP_SIZE, primary_device):
+                    primary_device = device
+            result = program.get_work_group_info(OPENCL_WORK_GROUP_SIZE,
+                                                 primary_device)
+        return result
 
     def _get_prefered_local_size(self, program):
         primary_device = None
-        for device in self.devices:
-            if not primary_device:
-                primary_device = device
-            elif program.get_work_group_info(
-                    OPENCL_LOCAL_GROUP_SIZE,
-                    device) > program.get_work_group_info(
-                        OPENCL_LOCAL_GROUP_SIZE, primary_device):
-                primary_device = device
-        return program.get_work_group_info(OPENCL_LOCAL_GROUP_SIZE,
-                                           primary_device)
+        result = None
+        if self.devices is not None:
+            for device in self.devices:
+                if not primary_device:
+                    primary_device = device
+                elif program.get_work_group_info(
+                        OPENCL_LOCAL_GROUP_SIZE,
+                        device) > program.get_work_group_info(
+                            OPENCL_LOCAL_GROUP_SIZE, primary_device):
+                    primary_device = device
+                result = program.get_work_group_info(OPENCL_LOCAL_GROUP_SIZE,
+                                                     primary_device)
+        return result
 
     def _is_platform_available(self):
-        return self.context is not None and len(self.devices) > 0
+        result = None
+        if self.context is not None and self.devices is not None:
+            result = self.context is not None and len(self.devices) > 0
+            return result
+        return result
 
     def _supports_hardware_extensions(self, instruction):
         return instruction in self.hardware_extensions
@@ -170,7 +192,7 @@ class OpenCLPlatform:
     def _grayscale(self, input_image):
         result = OpenCLBuffer(
             OPENCL_BUFFER(self.context,
-                          READ_WRITE
+                          READ_ONLY
                           | ALLOC_HOST_PTR,
                           size=input_image.size),
             OPENCL_BUFFER(self.context,
@@ -264,10 +286,10 @@ class OpenCLPlatform:
 
         return result
 
-    def _edge_detection(self, input_image, threshold=95):
+    def _edge_detection(self, input_image, threshold):
         result = OpenCLBuffer(
             OPENCL_BUFFER(self.context,
-                          READ_WRITE
+                          READ_ONLY
                           | ALLOC_HOST_PTR,
                           size=input_image.size),
             OPENCL_BUFFER(self.context,
@@ -555,8 +577,11 @@ class OpenCLPlatform:
             opencl_buffers.opencl_fetch_input_event.wait()
             opencl_buffers.opencl_input_processing_event.wait()
             opencl_buffers.opencl_fetch_result_event.wait()
-
-        time = opencl_buffers.opencl_fetch_result_event.profile.end - opencl_buffers.opencl_fetch_input_event.profile.start
+        time = None
+        if opencl_buffers.opencl_fetch_result_event is not None and opencl_buffers.opencl_fetch_input_event is not None:
+            time = opencl_buffers.opencl_fetch_result_event.profile.end - opencl_buffers.opencl_fetch_input_event.profile.start
+        else:
+            time = 1.0
         timetable.append(time)
         self.profiling['_edge_detection'] = NUMPY_AVG(timetable)
 

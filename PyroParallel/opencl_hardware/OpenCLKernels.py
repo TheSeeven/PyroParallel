@@ -30,6 +30,10 @@ class Kernels:
     EDGE_DETECTION = """
 __kernel void edge_detection(__global const uchar* inputImage, __global uchar* outputImage, const uint width, const uint height, uint threshold)
 {
+    uchar pixelValue ;
+    int sumX = 0;
+    int sumY = 0;
+    int magnitude,imageIdx;
     int gx[3][3] = {{-1, 0, 1},
                     {-2, 0, 2},
                     {-1, 0, 1}};
@@ -49,15 +53,12 @@ __kernel void edge_detection(__global const uchar* inputImage, __global uchar* o
         return;
     }
     
-    int sumX = 0;
-    int sumY = 0;
-    
     for (int i = -1; i <= 1; ++i) {
         for (int j = -1; j <= 1; ++j) {
             int2 offset = (int2)(gid.x + j, gid.y + i);
             int2 kernelIdx = (int2)(i + 1, j + 1);
             
-            int imageIdx = (offset.y * width + offset.x) * 3;
+            imageIdx = (offset.y * width + offset.x) * 3;
             if(imageIdx<(width * height * 3)-2){
             
                 sumX += gx[kernelIdx.x][kernelIdx.y] * inputImage[imageIdx];
@@ -66,10 +67,12 @@ __kernel void edge_detection(__global const uchar* inputImage, __global uchar* o
         }
     }
     
-    int magnitude = (int)(sqrt((float)(sumX * sumX + sumY * sumY)));
-    
-    uchar pixelValue = (magnitude > threshold) ? 255 : 0;
-    
+    magnitude = (int)(sqrt((float)(sumX * sumX + sumY * sumY)));
+    if (magnitude < threshold) {
+        pixelValue = 0;
+    } else {
+        pixelValue = (uchar)magnitude;
+    }
     if(outputIdx < ((width * height * 3)-2)){
         outputImage[outputIdx] = pixelValue;
         outputImage[outputIdx + 1] = pixelValue;

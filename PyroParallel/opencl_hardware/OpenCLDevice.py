@@ -90,7 +90,7 @@ class OpenCLDevice:
     def _grayscale(self, input_image):
         result = OpenCLBuffer(
             OPENCL_BUFFER(self.context,
-                          READ_WRITE
+                          READ_ONLY
                           | ALLOC_HOST_PTR,
                           size=input_image.size),
             OPENCL_BUFFER(self.context,
@@ -186,7 +186,7 @@ class OpenCLDevice:
     def _edge_detection(self, input_image, threshold=95):
         result = OpenCLBuffer(
             OPENCL_BUFFER(self.context,
-                          READ_WRITE
+                          READ_ONLY
                           | ALLOC_HOST_PTR,
                           size=input_image.size),
             OPENCL_BUFFER(self.context,
