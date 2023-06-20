@@ -363,6 +363,10 @@ class PyroParallel:
                                 hardware_resource] = OpenCLFunctions.Pictures.get_work_amount(  # create a function specific for operations since it has more ev queues
                                     hardware_resources_queues[
                                         hardware_resource])
+                            if hardware_resources_queues_status[
+                                    hardware_resource] == 0:
+                                hardware_resources_queues[
+                                    hardware_resource] = []
                         selected_hardware_resource = min(
                             hardware_resources_queues_status,
                             key=hardware_resources_queues_status.

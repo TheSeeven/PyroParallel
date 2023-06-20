@@ -171,7 +171,6 @@ class OpenCLDevice:
             global_size, max_work_group_size_kernel,
             self.max_work_group_size_device, self.max_work_items_device,
             prefered_local_size)
-
         result.opencl_input_processing_event = ENQUEUE_PROCESS_ASYNC(
             self.queue, program, global_size, local_size, wait_for=None)
         result.opencl_fetch_result_event = ENQUEUE_COPY_ASYNC(
