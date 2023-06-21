@@ -1,7 +1,6 @@
 import PyroParallel as Pyro
 import numpy as np
 import time
-import os
 from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
@@ -15,7 +14,6 @@ TEST_ONLY_iGPU_CPU = 4
 
 PROCESSING_MODE = Pyro.DEVICE_MODE
 TEST_MODE = TEST_ONLY_GPUS
-
 ### TESTING PANNEL
 
 Framework_all = Pyro.PyroParallel(verbose=True,
@@ -57,6 +55,7 @@ Framework_iGPU_CPU = Pyro.PyroParallel(verbose=True,
                                        emulation=False,
                                        processing_mode=PROCESSING_MODE)
 Framework_iGPU_CPU.opencl_devices = Framework_iGPU_CPU.opencl_devices[1:]
+
 Framework_iGPU_CPU.benchmark_api()
 Framework_all.benchmark_api()
 Framework_only_CPU.benchmark_api()

@@ -259,23 +259,27 @@ class PyroParallel:
         if len(images) > 0:
             if len(hardware_resources) > 0:
                 result = []
-                hardware_resource_queues = {}
-                hardware_resource_queues_status = {}
+                hardware_resources_queues = {}
+                hardware_resources_queues_status = {}
 
                 selected_hardware_resource = None
                 for hardware_resource in hardware_resources:
                     hardware_resource_queues[hardware_resource] = []
-                    hardware_resource_queues_status[hardware_resource] = 0
+                    hardware_resources_queues_status[hardware_resource] = 0
                 hardware_resource_queues = dict(
                     sorted(hardware_resource_queues.items(),
                            key=lambda x: -x[0].profiling["_grayscale"]))
                 for image in images:
                     for hardware_resource in hardware_resource_queues:
-                        hardware_resource_queues_status[
+                        hardware_resources_queues_status[
                             hardware_resource] = OpenCLFunctions.Pictures.get_work_amount(
                                 hardware_resource_queues[hardware_resource])
+                        if hardware_resources_queues_status[
+                                hardware_resource] == 0:
+                            hardware_resources_queues[hardware_resource] = []
+
                     selected_hardware_resource = min(
-                        hardware_resource_queues_status,
+                        hardware_resources_queues_status,
                         key=hardware_resource_queues_status.get  # type: ignore
                     )  # type: ignore
                     hardware_resource_queues[
@@ -414,26 +418,30 @@ class PyroParallel:
             if len(hardware_resources) > 0:
                 if isinstance(threshold, int):
                     result = []
-                    hardware_resource_queues = {}
-                    hardware_resource_queues_status = {}
+                    hardware_resources_queues = {}
+                    hardware_resources_queues_status = {}
 
                     selected_hardware_resource = None
                     for hardware_resource in hardware_resources:
                         hardware_resource_queues[hardware_resource] = []
-                        hardware_resource_queues_status[hardware_resource] = 0
+                        hardware_resources_queues_status[hardware_resource] = 0
                     hardware_resource_queues = dict(
                         sorted(
                             hardware_resource_queues.items(),
                             key=lambda x: -x[0].profiling["_edge_detection"]))
                     for image in images:
                         for hardware_resource in hardware_resource_queues:
-                            hardware_resource_queues_status[
+                            hardware_resources_queues_status[
                                 hardware_resource] = OpenCLFunctions.Pictures.get_work_amount(
                                     hardware_resource_queues[hardware_resource]
                                 )
+                            if hardware_resources_queues_status[
+                                    hardware_resource] == 0:
+                                hardware_resources_queues[
+                                    hardware_resource] = []
                         selected_hardware_resource = min(
-                            hardware_resource_queues_status,
-                            key=hardware_resource_queues_status.
+                            hardware_resources_queues_status,
+                            key=hardware_resources_queues_status.
                             get  # type: ignore
                         )  # type: ignore
                         hardware_resource_queues[
