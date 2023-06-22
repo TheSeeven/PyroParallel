@@ -264,28 +264,29 @@ class PyroParallel:
 
                 selected_hardware_resource = None
                 for hardware_resource in hardware_resources:
-                    hardware_resource_queues[hardware_resource] = []
+                    hardware_resources_queues[hardware_resource] = []
                     hardware_resources_queues_status[hardware_resource] = 0
-                hardware_resource_queues = dict(
-                    sorted(hardware_resource_queues.items(),
+                hardware_resources_queues = dict(
+                    sorted(hardware_resources_queues.items(),
                            key=lambda x: -x[0].profiling["_grayscale"]))
                 for image in images:
-                    for hardware_resource in hardware_resource_queues:
+                    for hardware_resource in hardware_resources_queues:
                         hardware_resources_queues_status[
                             hardware_resource] = OpenCLFunctions.Pictures.get_work_amount(
-                                hardware_resource_queues[hardware_resource])
+                                hardware_resources_queues[hardware_resource])
                         if hardware_resources_queues_status[
                                 hardware_resource] == 0:
                             hardware_resources_queues[hardware_resource] = []
 
                     selected_hardware_resource = min(
                         hardware_resources_queues_status,
-                        key=hardware_resource_queues_status.get  # type: ignore
+                        key=hardware_resources_queues_status.
+                        get  # type: ignore
                     )  # type: ignore
-                    hardware_resource_queues[
+                    hardware_resources_queues[
                         selected_hardware_resource].append(
                             selected_hardware_resource._grayscale(image))
-                for hardware_resources, events in hardware_resource_queues.items(
+                for hardware_resources, events in hardware_resources_queues.items(
                 ):
                     for event in events:
                         event.opencl_fetch_result_event.wait()
@@ -423,11 +424,11 @@ class PyroParallel:
 
                     selected_hardware_resource = None
                     for hardware_resource in hardware_resources:
-                        hardware_resource_queues[hardware_resource] = []
+                        hardware_resources_queues[hardware_resource] = []
                         hardware_resources_queues_status[hardware_resource] = 0
                     hardware_resource_queues = dict(
                         sorted(
-                            hardware_resource_queues.items(),
+                            hardware_resources_queues.items(),
                             key=lambda x: -x[0].profiling["_edge_detection"]))
                     for image in images:
                         for hardware_resource in hardware_resource_queues:
