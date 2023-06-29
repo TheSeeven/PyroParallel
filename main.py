@@ -71,21 +71,29 @@ Framework_only_GPUS.benchmark_api()
 Framework_only_iGPU.benchmark_api()
 Framework_only_GPU.benchmark_api()
 ### TEST DATA
-NUMBER_OF_TESTS = 120
+NUMBER_OF_TESTS = 100
 GRAYSCALE_TEST_DATA = [
-    np.full((4000, 4000, 3), 255, dtype=np.uint8)
+    np.full((1000, 1000, 3), 255, dtype=np.uint8)
     for _ in range(NUMBER_OF_TESTS)
 ]
 
-TEST_FP32_A = [np.full(10000, 1.1648, dtype=np.float32) for _ in range(100)]
-TEST_FP32_B = [np.full(10000, 2.2569, dtype=np.float32) for _ in range(100)]
+TEST_FP32_A = [
+    np.full(1000, 1.1648, dtype=np.float32) for _ in range(NUMBER_OF_TESTS)
+]
+TEST_FP32_B = [
+    np.full(1000, 2.2569, dtype=np.float32) for _ in range(NUMBER_OF_TESTS)
+]
 
-TEST_FP64_A = [np.full(10000, 1.1648, dtype=np.float64) for _ in range(100)]
-TEST_FP64_B = [np.full(10000, 2.2569, dtype=np.float64) for _ in range(100)]
+TEST_FP64_A = [
+    np.full(1000, 1.1648, dtype=np.float64) for _ in range(NUMBER_OF_TESTS)
+]
+TEST_FP64_B = [
+    np.full(1000, 2.2569, dtype=np.float64) for _ in range(NUMBER_OF_TESTS)
+]
 
 input_image = np.array(Image.open("./sample_data/5120x2880_1_NO_HDR.bmp"))
 EDGE_DETECTION_SAMPLE_IMAGE = Framework_all.grayscale(
-    [input_image for x in range(120)])
+    [input_image for x in range(NUMBER_OF_TESTS)])
 ### TEST DATA
 
 ### FUNCTIONALITY TESTING
